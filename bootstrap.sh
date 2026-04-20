@@ -4,45 +4,67 @@ set -euo pipefail
 # ============================================================================
 # bootstrap.sh — Create Azure resources for a CB Advisory prototype
 #
+# This script uses a service principal for authentication. The credentials
+# are stored as GitHub organization secrets and available in Codespaces
+# as environment variables:
+#
+#   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_ID       - Service principal app/client ID
+#   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET   - Service principal secret
+#   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID       - Azure tenant ID
+#   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID - Target subscription ID
+#
 # Usage:
-#   ./bootstrap.sh \
-#     --subscription "CB-Advisory-Prototypes" \
-#     --resource-group "rg-cb-prototypes" \
-#     --app-name "cb-prototype-demo" \
-#     --location "centralus"
+#   ./bootstrap.sh --app-name "my-prototype"
+#
+# Optional overrides:
+#   --resource-group "rg-cb-prototypes"   (default: rg-cb-prototypes)
+#   --location "centralus"                (default: centralus)
 #
 # What it creates:
 #   1. Resource group (if it doesn't exist)
 #   2. Azure Static Web App (Free tier)
-#
-# What it outputs:
-#   - Deployment token (add as AZURE_STATIC_WEB_APPS_API_TOKEN repo secret)
-#   - Static Web App URL
+#   3. Sets the deployment token as a GitHub repo secret automatically
 # ============================================================================
 
 # --- Parse arguments --------------------------------------------------------
-SUBSCRIPTION=""
-RESOURCE_GROUP=""
 APP_NAME=""
+RESOURCE_GROUP="rg-cb-prototypes"
 LOCATION="centralus"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --subscription)  SUBSCRIPTION="$2";    shift 2 ;;
-    --resource-group) RESOURCE_GROUP="$2"; shift 2 ;;
-    --app-name)      APP_NAME="$2";        shift 2 ;;
-    --location)      LOCATION="$2";        shift 2 ;;
+    --app-name)        APP_NAME="$2";        shift 2 ;;
+    --resource-group)  RESOURCE_GROUP="$2";   shift 2 ;;
+    --location)        LOCATION="$2";        shift 2 ;;
     -h|--help)
-      echo "Usage: ./bootstrap.sh --subscription <name> --resource-group <name> --app-name <name> [--location <region>]"
+      echo "Usage: ./bootstrap.sh --app-name <n> [--resource-group <n>] [--location <region>]"
+      echo ""
+      echo "Requires these environment variables (set via GitHub org secrets in Codespaces):"
+      echo "  CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_ID, CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET, CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID, CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
 # --- Validate required params -----------------------------------------------
-if [[ -z "$SUBSCRIPTION" || -z "$RESOURCE_GROUP" || -z "$APP_NAME" ]]; then
-  echo "Error: --subscription, --resource-group, and --app-name are required."
+if [[ -z "$APP_NAME" ]]; then
+  echo "Error: --app-name is required."
   echo "Run ./bootstrap.sh --help for usage."
+  exit 1
+fi
+
+# --- Validate environment variables -----------------------------------------
+MISSING_VARS=""
+[[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_ID:-}" ]]       && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_ID"
+[[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET:-}" ]]   && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET"
+[[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID:-}" ]]       && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID"
+[[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID:-}" ]] && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID"
+
+if [[ -n "$MISSING_VARS" ]]; then
+  echo "Error: Missing required environment variables:$MISSING_VARS"
+  echo ""
+  echo "These should be set as GitHub organization secrets and made available"
+  echo "to Codespaces. See the setup guide for instructions."
   exit 1
 fi
 
@@ -50,15 +72,22 @@ echo "============================================"
 echo "CB Advisory Prototype — Azure Bootstrap"
 echo "============================================"
 echo ""
-echo "Subscription:   $SUBSCRIPTION"
-echo "Resource Group:  $RESOURCE_GROUP"
 echo "App Name:        $APP_NAME"
+echo "Resource Group:  $RESOURCE_GROUP"
 echo "Location:        $LOCATION"
 echo ""
 
+# --- Login with service principal -------------------------------------------
+echo "→ Logging in with service principal..."
+az login --service-principal \
+  --username "$CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_ID" \
+  --password "$CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET" \
+  --tenant "$CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID" \
+  --output none
+
 # --- Set subscription -------------------------------------------------------
 echo "→ Setting subscription..."
-az account set --subscription "$SUBSCRIPTION"
+az account set --subscription "$CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID"
 
 # --- Create resource group if needed ----------------------------------------
 echo "→ Checking resource group..."
@@ -104,6 +133,11 @@ APP_URL=$(az staticwebapp show \
   --query "defaultHostname" \
   --output tsv)
 
+# --- Set the deployment token as a repo secret automatically -----------------
+echo "→ Setting deployment token as repo secret..."
+echo "$DEPLOYMENT_TOKEN" | gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN
+echo "  ✓ Secret AZURE_STATIC_WEB_APPS_API_TOKEN set."
+
 # --- Output results ----------------------------------------------------------
 echo ""
 echo "============================================"
@@ -113,12 +147,7 @@ echo ""
 echo "Static Web App URL:"
 echo "  https://$APP_URL"
 echo ""
-echo "Deployment Token (add as GitHub repo secret: AZURE_STATIC_WEB_APPS_API_TOKEN):"
-echo "  $DEPLOYMENT_TOKEN"
-echo ""
 echo "Next steps:"
-echo "  1. Go to your GitHub repo → Settings → Secrets and variables → Actions"
-echo "  2. Create a new secret named: AZURE_STATIC_WEB_APPS_API_TOKEN"
-echo "  3. Paste the deployment token above as the value"
-echo "  4. Push code to main — the GitHub Action will deploy automatically"
+echo "  1. Build your prototype"
+echo "  2. Push to main — the GitHub Action will deploy automatically"
 echo ""
