@@ -12,12 +12,13 @@ set -euo pipefail
 #   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET   - Service principal secret
 #   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID       - Azure tenant ID
 #   CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID - Target subscription ID
+#   CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT            - GitHub PAT with 'repo' scope (for setting secrets)
 #
 # Usage:
 #   ./bootstrap.sh --app-name "my-prototype"
 #
 # Optional overrides:
-#   --resource-group "rg-cb-prototypes"   (default: rg-cb-prototypes)
+#   --resource-group "rg-cb-ai-diagnostic-prototype"   (default: rg-cb-ai-diagnostic-prototype)
 #   --location "centralus"                (default: centralus)
 #
 # What it creates:
@@ -28,7 +29,7 @@ set -euo pipefail
 
 # --- Parse arguments --------------------------------------------------------
 APP_NAME=""
-RESOURCE_GROUP="rg-cb-prototypes"
+RESOURCE_GROUP="rg-cb-ai-diagnostic-prototype"
 LOCATION="centralus"
 
 while [[ $# -gt 0 ]]; do
@@ -59,6 +60,7 @@ MISSING_VARS=""
 [[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET:-}" ]]   && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_CLIENT_SECRET"
 [[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID:-}" ]]       && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_TENANT_ID"
 [[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID:-}" ]] && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_AZURE_SUBSCRIPTION_ID"
+[[ -z "${CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT:-}" ]]            && MISSING_VARS="$MISSING_VARS CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT"
 
 if [[ -n "$MISSING_VARS" ]]; then
   echo "Error: Missing required environment variables:$MISSING_VARS"
@@ -133,9 +135,22 @@ APP_URL=$(az staticwebapp show \
   --query "defaultHostname" \
   --output tsv)
 
+# --- Resolve GitHub repo from git remote -----------------------------------
+GITHUB_REPO=$(git remote get-url origin 2>/dev/null \
+  | sed -E 's#(git@github\.com:|https://github\.com/)##' \
+  | sed 's/\.git$//')
+
+if [[ -z "$GITHUB_REPO" ]]; then
+  echo "Error: Could not determine GitHub repo from git remote 'origin'."
+  exit 1
+fi
+
 # --- Set the deployment token as a repo secret automatically -----------------
-echo "→ Setting deployment token as repo secret..."
-echo "$DEPLOYMENT_TOKEN" | gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN
+# Uses CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT explicitly to avoid the Codespaces
+# app token, which lacks permission to manage repo secrets.
+echo "→ Setting deployment token as repo secret (repo: $GITHUB_REPO)..."
+CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT = 
+echo "$DEPLOYMENT_TOKEN" | GH_TOKEN="$CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT" gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN --repo "$GITHUB_REPO"
 echo "  ✓ Secret AZURE_STATIC_WEB_APPS_API_TOKEN set."
 
 # --- Output results ----------------------------------------------------------
