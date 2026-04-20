@@ -16,6 +16,7 @@
         "typescript.tsdk": "node_modules/typescript/lib"
       },
       "extensions": [
+        "anthropic.claude-code",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
