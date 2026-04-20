@@ -149,7 +149,6 @@ fi
 # Uses CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT explicitly to avoid the Codespaces
 # app token, which lacks permission to manage repo secrets.
 echo "→ Setting deployment token as repo secret (repo: $GITHUB_REPO)..."
-CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT = 
 echo "$DEPLOYMENT_TOKEN" | GH_TOKEN="$CB_AI_DIAGNOSTIC_PROTOTYPE_GITHUB_PAT" gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN --repo "$GITHUB_REPO"
 echo "  ✓ Secret AZURE_STATIC_WEB_APPS_API_TOKEN set."
 
